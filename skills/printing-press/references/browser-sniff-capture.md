@@ -296,14 +296,16 @@ Close the headed browser and restart headless with the saved state.
 
 **For HAR export (option 3):** Guide the user through the DevTools HAR-export flow. Make clear that a HAR is discovery input, not a promise that every captured HTML/XHR route becomes a printed CLI command. After analyzing the HAR, keep only surfaces that replay through lightweight HTTP/Surf/browser-compatible HTTP, browser-clearance cookie import plus replay, or structured HTML/SSR/RSS extraction. If the HAR only proves live page-context execution works, HOLD or pivot scope.
 
+**Manual HAR body capture pitfall.** Chrome can export page responses from disk cache as `206` partial-content entries with empty `response.content.text`, even when the user chose a HAR-with-content export. If browser-sniff analysis reports many `206` entries or missing bodies, tell the user the capture did not preserve response bodies and give the fix directly: in DevTools > Network, check **Disable cache**, then hard-reload each page while DevTools stays open before exporting the HAR. If Chrome still omits bodies, ask for a Firefox HAR export instead; Firefox's HAR export is more reliable for preserving page bodies.
+
 **Chrome 147+ DevTools HAR export — concrete instructions.** Recent Chrome versions (147+) removed "Save all as HAR with content" from the right-click menu in the Network panel. The download-arrow icon at the top of the Network panel is now the only stable export path. Walk the user through these steps in order — they are the steps a user got stuck on in a recent session, so the language is deliberately literal:
 
 1. **Open DevTools.** `Cmd+Option+I` (macOS) or `Ctrl+Shift+I` (Windows/Linux). If DevTools is already open but on the wrong tab, the next step covers it.
 2. **Switch to the Network panel.** It is in the top tab strip alongside Elements, Console, Sources, Performance. If DevTools is narrow, the Network tab may be hidden behind a `>>` overflow chevron at the right end of the tab strip — click `>>` and pick **Network**. Do not pick "Recorder" — that is a different panel.
 3. **Confirm recording is on.** A red dot at the top-left of the Network panel means recording is on. If it is gray/black, click it once to enable.
-4. **Check "Preserve log" and "Disable cache"** — both are checkboxes in the Network panel toolbar. Preserve log keeps records across navigations; disable cache forces fresh requests so the HAR contains real network activity.
+4. **Check "Preserve log" and "Disable cache"** — both are checkboxes in the Network panel toolbar. Preserve log keeps records across navigations; disable cache forces fresh requests so the HAR contains real network activity and page response bodies.
 5. **Clear any prior requests.** Click the 🚫 (clear / no-entry) icon in the toolbar to start with an empty log.
-6. **Reproduce the user flow on the target site** — navigate, click into the section the printed CLI needs, scroll, interact. Wait for network activity to settle between actions.
+6. **Hard-reload each page, then reproduce the user flow on the target site** — hard-reload with DevTools still open before interacting so Chrome records full `200` responses instead of cached `206` bodies. Then navigate, click into the section the printed CLI needs, scroll, interact. Wait for network activity to settle between actions.
 7. **Export the HAR.** Click the **download-arrow icon** at the top-left of the Network panel toolbar (between the upload-arrow icon `↑` and the record/clear icons — it looks like a `↓` arrow with a horizontal bar underneath). A macOS/Windows save dialog opens. Save as `<api>-capture.har` somewhere accessible like `~/Downloads/`.
 8. **Tell the agent the path.** The agent runs `cli-printing-press browser-sniff --har <path>` next.
 

@@ -354,6 +354,15 @@ func TestBrowserSniffEscalates200ChallengeShells(t *testing.T) {
 	assert.Contains(t, capture, "HTTP 200 challenge shells or truncations")
 }
 
+func TestBrowserSniffManualHARGuidesReliableBodyCapture(t *testing.T) {
+	capture := readContractFile(t, filepath.Join("..", "..", "skills", "printing-press", "references", "browser-sniff-capture.md"))
+
+	assert.Contains(t, capture, "Chrome can export page responses from disk cache as `206` partial-content entries with empty `response.content.text`")
+	assert.Contains(t, capture, "check **Disable cache**, then hard-reload each page while DevTools stays open before exporting the HAR")
+	assert.Contains(t, capture, "ask for a Firefox HAR export instead")
+	assert.Contains(t, capture, "Hard-reload each page, then reproduce the user flow")
+}
+
 func TestPrintingPressSkillUsesRunstateForBuilds(t *testing.T) {
 	skill := readContractFile(t, filepath.Join("..", "..", "skills", "printing-press", "SKILL.md"))
 
