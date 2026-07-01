@@ -1,6 +1,5 @@
 import argparse
 import ctypes
-import time
 
 from playwright.sync_api import sync_playwright
 
@@ -17,8 +16,6 @@ END_DATE = "20260926"
 ADULT_COUNT = "2"
 CHILD_COUNT = "1"
 PRODUCT_SELECTOR = "#rdbProduct_1"
-STEP2_REFRESH_INTERVAL_SECONDS = 1
-VK_ESCAPE = 0x1B
 
 
 def click_search_if_found(page) -> bool:
@@ -58,55 +55,43 @@ def select_product(page) -> bool:
     return page.locator(PRODUCT_SELECTOR).is_checked()
 
 
-def is_esc_pressed() -> bool:
-    return bool(ctypes.windll.user32.GetAsyncKeyState(VK_ESCAPE) & 0x8000)
+def show_remaining_seats_popup(page) -> None:
+    departure_date = page.locator("#p_search_stdt_1").input_value()
+    return_date = page.locator("#p_search_eddt_1").input_value()
 
+    if not departure_date:
+        raise RuntimeError("Required search data was not populated before reading remaining seats")
 
-def wait_for_esc_or_timeout(seconds: int) -> bool:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if is_esc_pressed():
-            return True
-        time.sleep(0.05)
-    return False
+    product_rows = []
+    for product_no, label in ((1, "일반"), (5, "추석연휴")):
+        key_locator = page.locator(f"#p_key_{product_no}")
+        if not key_locator.count():
+            raise RuntimeError(f"Product key #p_key_{product_no} was not found after search")
 
+        product_key = key_locator.input_value()
+        if not product_key:
+            raise RuntimeError(f"Product key #p_key_{product_no} is empty")
 
-def refresh_search_select_until_esc(page) -> bool:
-    print(
-        "   Repeating search -> product select every "
-        f"{STEP2_REFRESH_INTERVAL_SECONDS}s. Press Esc to stop.",
-        flush=True,
-    )
-    attempt = 1
-    while True:
-        if is_esc_pressed():
-            print("   Esc detected. Step-2 repeat loop stopped.", flush=True)
-            return True
+        busan_count = page.evaluate(
+            """({ departureDate, productKey }) => fnProductCntChk(departureDate, productKey, 'PS', null, null)""",
+            {"departureDate": departure_date, "productKey": product_key},
+        )
 
-        try:
-            searched = click_search_if_found(page)
-            page.wait_for_timeout(500)
-            checked = select_product(page)
-            print(
-                f"   Loop {attempt}: searched={searched}, {PRODUCT_SELECTOR} checked={checked}",
-                flush=True,
+        shimono_count = 0
+        if TRIP_TYPE == "shuttle" and return_date:
+            shimono_count = page.evaluate(
+                """({ returnDate, productKey }) => fnProductCntChk(returnDate, productKey, 'SP', null, null)""",
+                {"returnDate": return_date, "productKey": product_key},
             )
-        except KeyboardInterrupt:
-            print("   Ctrl+C detected. Step-2 repeat loop stopped.", flush=True)
-            return True
-        except Exception as exc:
-            print(f"   Loop {attempt}: failed: {exc}", flush=True)
 
-        attempt += 1
-        try:
-            if wait_for_esc_or_timeout(STEP2_REFRESH_INTERVAL_SECONDS):
-                print("   Esc detected. Step-2 repeat loop stopped.", flush=True)
-                return True
-        except KeyboardInterrupt:
-            print("   Ctrl+C detected. Step-2 repeat loop stopped.", flush=True)
-            return True
+        product_rows.append(
+            f"{label} 상품({product_no})\n"
+            f"  부산 출발편 잔여석: {busan_count}개\n"
+            f"  시모노세키 출발편 잔여석: {shimono_count}개"
+        )
 
-
+    message = "\n\n".join(product_rows)
+    ctypes.windll.user32.MessageBoxW(0, message, "잔여석 조회", 0)
 def main() -> None:
     if TRIP_TYPE not in {"shuttle", "oneway"}:
         raise ValueError('TRIP_TYPE must be either "shuttle" or "oneway"')
@@ -183,13 +168,7 @@ def main() -> None:
             print("   Search function was not found. Continuing with visible products.", flush=True)
 
         print(f"   {PRODUCT_SELECTOR} checked: {select_product(page)}", flush=True)
-
-        stopped_by_esc = False
-        if not args.no_wait and not args.skip_step2_refresh_loop:
-            stopped_by_esc = refresh_search_select_until_esc(page)
-
-        if stopped_by_esc:
-            print("Repeat loop stopped. Browser remains open.", flush=True)
+        show_remaining_seats_popup(page)
 
         if not args.no_wait and not args.skip_step2_prompt:
             input("Step 2 is ready. Review the browser, then press Enter here to go to step 3...")
