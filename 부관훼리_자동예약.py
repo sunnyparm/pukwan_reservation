@@ -55,37 +55,73 @@ def select_product(page) -> bool:
     return page.locator(PRODUCT_SELECTOR).is_checked()
 
 
+def get_search_dates(page):
+    dates = page.evaluate(
+        """() => {
+            const departure = Array.from(document.querySelectorAll('input[id^="p_search_stdt_"]'))
+                .map(input => input.value)
+                .find(Boolean) || "";
+            const ret = Array.from(document.querySelectorAll('input[id^="p_search_eddt_"]'))
+                .map(input => input.value)
+                .find(Boolean) || "";
+            return { departure, returnDate: ret };
+        }"""
+    )
+    return dates["departure"], dates["returnDate"]
+
+
+def get_product_options(page):
+    products = page.evaluate(
+        """() => {
+            const list = document.querySelector("#pProductList") || document;
+            return Array.from(list.querySelectorAll('input[id^="p_key_"]'))
+                .map(input => {
+                    const match = input.id.match(/^p_key_(\\d+)$/);
+                    if (!match || !input.value) return null;
+
+                    const productNo = Number(match[1]);
+                    const nameInput = document.querySelector(`#p_name_${productNo}`);
+                    const title = document.querySelector(`#p_product_${productNo} b`);
+                    const radio = document.querySelector(`#rdbProduct_${productNo}`);
+
+                    return {
+                        product_no: productNo,
+                        label: (nameInput?.value || title?.textContent || `상품 ${productNo}`).trim(),
+                        product_key: input.value,
+                        disabled: Boolean(radio?.disabled),
+                    };
+                })
+                .filter(product => product && !product.disabled)
+                .filter(Boolean);
+        }"""
+    )
+    if not products:
+        raise RuntimeError("No products were found in #pProductList after search")
+    return products
+
+
 def show_remaining_seats_popup(page) -> None:
-    departure_date = page.locator("#p_search_stdt_1").input_value()
-    return_date = page.locator("#p_search_eddt_1").input_value()
+    departure_date, return_date = get_search_dates(page)
 
     if not departure_date:
         raise RuntimeError("Required search data was not populated before reading remaining seats")
 
     product_rows = []
-    for product_no, label in ((1, "일반"), (5, "추석연휴")):
-        key_locator = page.locator(f"#p_key_{product_no}")
-        if not key_locator.count():
-            raise RuntimeError(f"Product key #p_key_{product_no} was not found after search")
-
-        product_key = key_locator.input_value()
-        if not product_key:
-            raise RuntimeError(f"Product key #p_key_{product_no} is empty")
-
+    for product in get_product_options(page):
         busan_count = page.evaluate(
             """({ departureDate, productKey }) => fnProductCntChk(departureDate, productKey, 'PS', null, null)""",
-            {"departureDate": departure_date, "productKey": product_key},
+            {"departureDate": departure_date, "productKey": product["product_key"]},
         )
 
         shimono_count = 0
         if TRIP_TYPE == "shuttle" and return_date:
             shimono_count = page.evaluate(
                 """({ returnDate, productKey }) => fnProductCntChk(returnDate, productKey, 'SP', null, null)""",
-                {"returnDate": return_date, "productKey": product_key},
+                {"returnDate": return_date, "productKey": product["product_key"]},
             )
 
         product_rows.append(
-            f"{label} 상품({product_no})\n"
+            f"{product['label']} 상품({product['product_no']})\n"
             f"  부산 출발편 잔여석: {busan_count}개\n"
             f"  시모노세키 출발편 잔여석: {shimono_count}개"
         )

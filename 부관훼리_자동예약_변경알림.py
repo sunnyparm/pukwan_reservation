@@ -25,37 +25,29 @@ BASE = load_base_module()
 
 
 def collect_snapshot(page):
-    if page.locator("#p_search_stdt_1").count() == 0:
+    departure_date, return_date = BASE.get_search_dates(page)
+    if not departure_date:
         raise RuntimeError("Step-2 departure date input was not found")
 
-    departure_date = page.locator("#p_search_stdt_1").input_value()
-    return_date = page.locator("#p_search_eddt_1").input_value() if page.locator("#p_search_eddt_1").count() else ""
-
     snapshot = {}
-    for product_no, label in ((1, "일반"), (5, "추석연휴")):
-        key_locator = page.locator(f"#p_key_{product_no}")
-        if not key_locator.count():
-            raise RuntimeError(f"Product key #p_key_{product_no} was not found after search")
-
-        product_key = key_locator.input_value()
-        if not product_key:
-            raise RuntimeError(f"Product key #p_key_{product_no} is empty")
-
+    for product in BASE.get_product_options(page):
         busan_count = page.evaluate(
             """({ departureDate, productKey }) => fnProductCntChk(departureDate, productKey, 'PS', null, null)""",
-            {"departureDate": departure_date, "productKey": product_key},
+            {"departureDate": departure_date, "productKey": product["product_key"]},
         )
 
         shimono_count = None
         if BASE.TRIP_TYPE == "shuttle" and return_date:
             shimono_count = page.evaluate(
                 """({ returnDate, productKey }) => fnProductCntChk(returnDate, productKey, 'SP', null, null)""",
-                {"returnDate": return_date, "productKey": product_key},
+                {"returnDate": return_date, "productKey": product["product_key"]},
             )
 
+        product_no = product["product_no"]
         snapshot[product_no] = {
-            "label": label,
-            "product_key": product_key,
+            "label": product["label"],
+            "product_key": product["product_key"],
+            "disabled": product["disabled"],
             "busan": int(busan_count),
             "shimono": None if shimono_count is None else int(shimono_count),
         }
@@ -65,7 +57,7 @@ def collect_snapshot(page):
 
 def format_snapshot(snapshot) -> str:
     lines = []
-    for product_no in (1, 5):
+    for product_no in sorted(snapshot):
         item = snapshot[product_no]
         lines.append(f"{item['label']} 상품({product_no})")
         lines.append(f"  부산 출발편 잔여석: {item['busan']}개")
@@ -80,9 +72,16 @@ def snapshot_changed(prev_snapshot, current_snapshot) -> bool:
     if prev_snapshot is None:
         return False
 
-    for product_no in (1, 5):
+    if set(prev_snapshot) != set(current_snapshot):
+        return True
+
+    for product_no in current_snapshot:
         prev_item = prev_snapshot[product_no]
         curr_item = current_snapshot[product_no]
+        if prev_item["product_key"] != curr_item["product_key"]:
+            return True
+        if prev_item["disabled"] != curr_item["disabled"]:
+            return True
         if prev_item["busan"] != curr_item["busan"]:
             return True
         if prev_item["shimono"] != curr_item["shimono"]:
